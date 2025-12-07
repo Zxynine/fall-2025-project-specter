@@ -15,13 +15,10 @@ func _enter_tree():
 @onready var rc = $RayCast3D
 @onready var echolocation_timer = $EchoTimer
 @onready var confidence : ConfidenceWrapper
-@onready var building_manager : RS_Building = $"../../../room_search"
 
 var target_pos : Vector3
 var search_pos : Vector3
 var roam_target : Vector3
-var roam_targeter: RS_RoomRoam
-
 var SPEED = 3.0
 var search_counter = 0
 const ROAM_SPEED = 2.0
@@ -46,10 +43,6 @@ func _ready():
 	roam_target = global_position
 	set_new_roam_target()
 	sfx_kill.volume_db = -14
-	
-	
-	if (building_manager != null): print("Current Room: ", building_manager.GetRoom(self.global_position))
-	
 
 func _exit_tree():
 	SoundManager.unregister_enemy(self)
@@ -138,8 +131,6 @@ func change_state(state):
 		ROAMING:
 			print("State changed to: ROAMING")
 			SPEED = ROAM_SPEED
-			var current_room = null if (building_manager == null) else building_manager.GetRoom(self.global_position)
-			if (current_room != null): roam_targeter = RS_RoomRoam.new(current_room, self.global_position)
 			set_new_roam_target()
 		SEARCHING:
 			print("State changed to: SEARCHING")
@@ -151,8 +142,6 @@ func change_state(state):
 			print("State changed to: HUNTING")
 			SPEED = HUNT_SPEED
 			target_pos = confidence.get_interval(HUNTING)
-	
-	#print("Current Room: ", building_manager.GetRoom(self.global_position))
 
 func set_search_point():
 	var angle = randf() * 2 * PI
@@ -161,49 +150,20 @@ func set_search_point():
 	target_pos = search_pos + offset
 
 func set_new_roam_target():
-	if (building_manager == null):
-		if (randf() < PLAYER_BIAS):
-			roam_target = get_biased_roam_target()
-		else:
-			roam_target = get_simple_roam_target()
+	var bias = randf()
+	if bias < PLAYER_BIAS:
+		var to_player = (player.global_position - global_position).normalized()
+		var angle_offset = randf_range(-PI/3, PI/3)  # +/- 60 degrees
+		var rotated = to_player.rotated(Vector3.UP, angle_offset)
+		var distance = randf_range(5.0, ROAM_RADIUS)
+		roam_target = global_position + rotated * distance
 	else:
-		var current_room = building_manager.GetRoom(self.global_position)
-		var players_room = building_manager.GetRoom(player.global_position)
-		if (current_room == null or players_room == null): #In a doorway or something, bias towards player
-			roam_target = get_biased_roam_target()
-		#Only allow point biasing if in the same room
-		elif (current_room == players_room and randf() < PLAYER_BIAS): 
-			roam_target = get_biased_roam_target()
-		else:
-			#Ensure we have a targeter
-			if (roam_targeter == null): roam_targeter = RS_RoomRoam.new(current_room, self.global_position)
-			var next_target = self.roam_targeter.GetNextTarget()
-			if (next_target != null):
-				roam_target = next_target.global_position
-			else: #This means we have searched all of the nodes in the current room. Go to next room
-				var next_room = null
-				if (current_room == players_room): #Just go to a random nearby room
-					next_room = building_manager.ConnectionMap[current_room].pick_random()
-				else: #Else we want to go to a room that will make us closer to the player
-					next_room = building_manager.GetPathToRoom(current_room, players_room)[1] #path[0] is the current, path[-1] is the players, path[1] is the next room
-				#Set up the targeter and go to first point
-				roam_targeter = RS_RoomRoam.new(next_room, self.global_position)
-				roam_target = self.roam_targeter.GetNextTarget().global_position
+		var angle = randf() * 2 * PI
+		var radius = randf_range(5.0, ROAM_RADIUS)
+		var offset = Vector3(cos(angle) * radius, 0, sin(angle) * radius)
+		roam_target = global_position + offset
 
 	roam_target.y = global_position.y
-	
-func get_biased_roam_target():
-	var to_player = (player.global_position - global_position).normalized()
-	var angle_offset = randf_range(-PI/3, PI/3)  # +/- 60 degrees
-	var rotated = to_player.rotated(Vector3.UP, angle_offset)
-	var distance = randf_range(5.0, ROAM_RADIUS)
-	return global_position + rotated * distance
-
-func get_simple_roam_target():
-	var angle = randf() * 2 * PI
-	var radius = randf_range(5.0, ROAM_RADIUS)
-	var offset = Vector3(cos(angle) * radius, 0, sin(angle) * radius)
-	return global_position + offset
 
 func echolocate():
 	print("Echolocate!")
